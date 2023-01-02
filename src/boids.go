@@ -38,6 +38,7 @@ func (b *Boid) start() {
 }
 
 func createBoid(bid int) {
+	rand.Seed(time.Now().UnixNano())
 	b := Boid{
 		Id: bid,
 		Position: Vector2d{
