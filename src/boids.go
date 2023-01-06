@@ -14,10 +14,10 @@ type Boid struct {
 
 func (b *Boid) calcAcceleration() Vector2d {
 	upper, lower := b.Position.AddV(viewRadius), b.Position.AddV(-viewRadius)
-	aveVelocity, avePosition := Vector2d{x: 0, y: 0}, Vector2d{x: 0, y: 0}
+	aveVelocity, avePosition, seperation := Vector2d{x: 0, y: 0}, Vector2d{x: 0, y: 0}, Vector2d{x: 0, y: 0}
 	count := 0.0
 
-	mutex.Lock()
+	rwMutex.RLock()
 	for i := math.Max(lower.x, 0); i <= math.Min(upper.x, screenWidth); i++ {
 		for j := math.Max(lower.y, 0); j <= math.Min(upper.y, screenHeight); j++ {
 			if otherBoidId := boidMap[int(i)][int(j)]; otherBoidId != -1 && otherBoidId != b.Id {
@@ -25,52 +25,52 @@ func (b *Boid) calcAcceleration() Vector2d {
 					count++
 					aveVelocity = aveVelocity.Add(boids[otherBoidId].Velocity)
 					avePosition = avePosition.Add(boids[otherBoidId].Position)
+					seperation = seperation.Add(b.Position.Subtract(boids[otherBoidId].Position).DivisionV(dist))
 				}
 			}
 		}
 	}
-	mutex.Unlock()
+	rwMutex.RUnlock()
 
-	accel := Vector2d{x: 0, y: 0}
+	accel := Vector2d{
+		x: b.borderBounce(b.Position.x, screenWidth),
+		y: b.borderBounce(b.Position.y, screenHeight),
+	}
+
 	if count > 0 {
 		aveVelocity = aveVelocity.DivisionV(count)
 		avePosition = avePosition.DivisionV(count)
 
 		accelAlignment := aveVelocity.Subtract(b.Velocity).MultiplyV(adjRate)
 		accelCohesion := avePosition.Subtract(b.Position).MultiplyV(adjRate)
+		accelSeperation := seperation.MultiplyV(adjRate)
 
-		accel = accel.Add(accelAlignment).Add(accelCohesion)
+		accel = accel.Add(accelAlignment).Add(accelCohesion).Add(accelSeperation)
 	}
 
 	return accel
 }
 
+func (b *Boid) borderBounce(pos, maxBorderPos float64) float64 {
+	if pos < viewRadius {
+		return 1 / pos
+	} else if pos > maxBorderPos-viewRadius {
+		return 1 / (pos - maxBorderPos)
+	}
+	return 0
+}
+
 func (b *Boid) moveOne() {
 	acceleration := b.calcAcceleration()
 
-	mutex.Lock()
+	rwMutex.Lock()
 	b.Velocity = b.Velocity.Add(acceleration).Limit(-1, 1)
 
 	boidMap[int(b.Position.x)][int(b.Position.y)] = -1
 	b.Position = b.Position.Add(b.Velocity)
 	boidMap[int(b.Position.x)][int(b.Position.y)] = b.Id
 
-	next := b.Position.Add(b.Velocity)
-
-	if next.x >= screenWidth || next.x < 0 {
-		b.Velocity = Vector2d{
-			x: -b.Velocity.x,
-			y: b.Velocity.y,
-		}
-	}
-
-	if next.y >= screenHeight || next.y < 0 {
-		b.Velocity = Vector2d{
-			x: b.Velocity.x,
-			y: -b.Velocity.y,
-		}
-	}
-	mutex.Unlock()
+	rwMutex.Unlock()
 }
 
 func (b *Boid) start() {
